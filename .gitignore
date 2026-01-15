@@ -1,0 +1,38 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Environment
+.env
+.venv
+env/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Binary files (too large for GitHub, download at runtime)
+bin/
+*.exe
+
+# Logs
+logs/
+*.log
+
+# Config (user settings)
+config/settings.json
+
+# Queue
+queue/
+
+# Downloaded files
+downloads/

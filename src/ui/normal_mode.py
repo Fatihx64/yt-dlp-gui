@@ -1,6 +1,6 @@
 """
 YT-DLP GUI - Normal Mode Interface
-Simple, user-friendly download interface.
+Simplified download interface for quick video downloads.
 """
 
 from pathlib import Path
@@ -8,25 +8,23 @@ from typing import Optional
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QComboBox, QGroupBox, QFileDialog,
-    QProgressBar, QFrame, QMessageBox, QApplication
+    QProgressBar, QMessageBox, QApplication
 )
 from PySide6.QtCore import Qt, Signal
 
 from .preview_widget import PreviewWidget
 from ..core.ytdlp_wrapper import YTDLPWrapper, VideoInfo, DownloadProgress
 from ..core.queue_manager import get_queue_manager
-from ..core.format_extractor import FormatExtractor
 from ..core.config import get_config
 from ..utils.logger import get_logger
 
 
 class NormalMode(QWidget):
-    """Normal mode interface for simple video downloading."""
+    """Normal mode interface for simple downloads."""
     
     download_started = Signal()
-    add_to_queue = Signal(dict)  # video info dict
-    switch_to_advanced = Signal(str)  # current URL
-    url_changed = Signal(str)  # URL changed signal for sync
+    add_to_queue = Signal(dict)
+    switch_to_advanced = Signal(str)  # Emit URL when switching
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -41,8 +39,9 @@ class NormalMode(QWidget):
         self._connect_signals()
     
     def _setup_ui(self):
+        """Setup the UI components."""
         layout = QVBoxLayout(self)
-        layout.setSpacing(20)
+        layout.setSpacing(15)
         layout.setContentsMargins(20, 20, 20, 20)
         
         # URL Input Section
@@ -50,8 +49,7 @@ class NormalMode(QWidget):
         url_layout = QHBoxLayout(url_group)
         
         self.url_input = QLineEdit()
-        self.url_input.setPlaceholderText("Paste YouTube URL here...")
-        self.url_input.setClearButtonEnabled(True)
+        self.url_input.setPlaceholderText("Paste video URL here...")
         url_layout.addWidget(self.url_input)
         
         self.paste_btn = QPushButton("📋 Paste")
@@ -65,7 +63,7 @@ class NormalMode(QWidget):
         
         layout.addWidget(url_group)
         
-        # Preview Section
+        # Video Preview Section
         preview_group = QGroupBox("Video Preview")
         preview_layout = QVBoxLayout(preview_group)
         
@@ -78,65 +76,53 @@ class NormalMode(QWidget):
         options_group = QGroupBox("Download Options")
         options_layout = QVBoxLayout(options_group)
         
-        # Format and Quality row
+        # Format row
         format_row = QHBoxLayout()
-        
-        format_label = QLabel("Format:")
-        format_label.setFixedWidth(80)
-        format_row.addWidget(format_label)
+        format_row.addWidget(QLabel("Format:"))
         
         self.format_combo = QComboBox()
         self.format_combo.addItems([
-            "Video + Audio",
+            "Video + Audio (MP4)",
             "Video Only",
-            "Audio (MP3)",
-            "Audio (M4A)",
-            "Audio (Best)"
+            "Audio Only (MP3)",
+            "Audio Only (M4A)"
         ])
+        self.format_combo.setMinimumWidth(180)
         format_row.addWidget(self.format_combo)
         
         format_row.addSpacing(20)
-        
-        quality_label = QLabel("Quality:")
-        quality_label.setFixedWidth(60)
-        format_row.addWidget(quality_label)
+        format_row.addWidget(QLabel("Quality:"))
         
         self.quality_combo = QComboBox()
         self.quality_combo.addItems([
-            "Best",
-            "4K (2160p)",
-            "1080p",
-            "720p",
-            "480p",
-            "360p",
-            "Worst"
+            "Best Available",
+            "1080p (Full HD)",
+            "720p (HD)",
+            "480p (SD)",
+            "360p (Low)"
         ])
-        self.quality_combo.setCurrentIndex(2)  # Default to 1080p
+        self.quality_combo.setMinimumWidth(150)
         format_row.addWidget(self.quality_combo)
         
+        format_row.addStretch()
         options_layout.addLayout(format_row)
         
         # Output folder row
-        output_row = QHBoxLayout()
-        
-        output_label = QLabel("Save to:")
-        output_label.setFixedWidth(80)
-        output_row.addWidget(output_label)
+        folder_row = QHBoxLayout()
+        folder_row.addWidget(QLabel("Save to:"))
         
         self.output_input = QLineEdit()
         self.output_input.setText(self.config.settings.download.output_path)
-        self.output_input.setReadOnly(True)
-        output_row.addWidget(self.output_input)
+        folder_row.addWidget(self.output_input)
         
         self.browse_btn = QPushButton("📁 Browse")
         self.browse_btn.setFixedWidth(100)
-        output_row.addWidget(self.browse_btn)
+        folder_row.addWidget(self.browse_btn)
         
-        options_layout.addLayout(output_row)
-        
+        options_layout.addLayout(folder_row)
         layout.addWidget(options_group)
         
-        # Progress Section (initially hidden)
+        # Progress Section
         self.progress_group = QGroupBox("Download Progress")
         progress_layout = QVBoxLayout(self.progress_group)
         
@@ -144,58 +130,51 @@ class NormalMode(QWidget):
         self.progress_bar.setMinimum(0)
         self.progress_bar.setMaximum(100)
         self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setFormat("%p%")
         progress_layout.addWidget(self.progress_bar)
         
-        progress_info_row = QHBoxLayout()
+        # Progress info
+        info_row = QHBoxLayout()
         self.speed_label = QLabel("Speed: -")
         self.eta_label = QLabel("ETA: -")
         self.status_label = QLabel("Status: Ready")
-        progress_info_row.addWidget(self.speed_label)
-        progress_info_row.addStretch()
-        progress_info_row.addWidget(self.eta_label)
-        progress_info_row.addStretch()
-        progress_info_row.addWidget(self.status_label)
-        progress_layout.addLayout(progress_info_row)
+        info_row.addWidget(self.speed_label)
+        info_row.addStretch()
+        info_row.addWidget(self.eta_label)
+        info_row.addStretch()
+        info_row.addWidget(self.status_label)
+        progress_layout.addLayout(info_row)
         
-        # Cancel button row (shown during download)
-        cancel_row = QHBoxLayout()
-        cancel_row.addStretch()
-        
+        # Cancel button
         self.cancel_btn = QPushButton("✖ Cancel Download")
         self.cancel_btn.setObjectName("dangerButton")
         self.cancel_btn.setVisible(False)
-        self.cancel_btn.setMinimumWidth(150)
-        cancel_row.addWidget(self.cancel_btn)
-        
-        cancel_row.addStretch()
-        progress_layout.addLayout(cancel_row)
+        progress_layout.addWidget(self.cancel_btn, alignment=Qt.AlignCenter)
         
         self.progress_group.setVisible(False)
         layout.addWidget(self.progress_group)
         
         # Action Buttons
         action_layout = QHBoxLayout()
-        action_layout.setSpacing(15)
         
         self.download_btn = QPushButton("▶ Download")
         self.download_btn.setObjectName("primaryButton")
         self.download_btn.setEnabled(False)
-        self.download_btn.setMinimumHeight(45)
+        self.download_btn.setMinimumWidth(150)
         action_layout.addWidget(self.download_btn)
         
         self.queue_btn = QPushButton("+ Add to Queue")
         self.queue_btn.setObjectName("secondaryButton")
         self.queue_btn.setEnabled(False)
-        self.queue_btn.setMinimumHeight(45)
+        self.queue_btn.setMinimumWidth(150)
         action_layout.addWidget(self.queue_btn)
         
         self.advanced_btn = QPushButton("⚙ Advanced Mode")
-        self.advanced_btn.setMinimumHeight(45)
+        self.advanced_btn.setMinimumWidth(150)
         action_layout.addWidget(self.advanced_btn)
         
         layout.addLayout(action_layout)
-        
-        # Spacer
         layout.addStretch()
     
     def _connect_signals(self):
@@ -205,30 +184,16 @@ class NormalMode(QWidget):
         self.browse_btn.clicked.connect(self._browse_folder)
         self.download_btn.clicked.connect(self._start_download)
         self.queue_btn.clicked.connect(self._add_to_queue)
-        self.advanced_btn.clicked.connect(self._switch_to_advanced)
+        self.advanced_btn.clicked.connect(lambda: self.switch_to_advanced.emit(self.url_input.text()))
         self.url_input.returnPressed.connect(self._fetch_info)
+        self.format_combo.currentIndexChanged.connect(self._on_format_changed)
         self.cancel_btn.clicked.connect(self._cancel_download)
         
-        # URL change tracking
-        self.url_input.textChanged.connect(self._on_url_changed)
-        
-        # Format change updates quality options
-        self.format_combo.currentIndexChanged.connect(self._on_format_changed)
-        
-        # yt-dlp signals
+        # YT-DLP signals
         self.ytdlp.signals.info_ready.connect(self._on_info_ready)
         self.ytdlp.signals.error.connect(self._on_error)
         self.ytdlp.signals.progress.connect(self._on_progress)
         self.ytdlp.signals.finished.connect(self._on_finished)
-    
-    def _on_url_changed(self, text: str):
-        """Emit URL changed signal for sync with other modes."""
-        self.url_changed.emit(text)
-    
-    def _switch_to_advanced(self):
-        """Switch to advanced mode with current URL."""
-        current_url = self.url_input.text().strip()
-        self.switch_to_advanced.emit(current_url)
     
     def _paste_url(self):
         """Paste URL from clipboard."""
@@ -251,7 +216,6 @@ class NormalMode(QWidget):
         self.download_btn.setEnabled(False)
         self.queue_btn.setEnabled(False)
         
-        self.logger.info(f"Fetching info for: {url}")
         self.ytdlp.extract_info(url)
     
     def _on_info_ready(self, info: VideoInfo):
@@ -289,43 +253,59 @@ class NormalMode(QWidget):
     
     def _on_format_changed(self, index: int):
         """Handle format selection change."""
-        # Disable quality selection for audio-only formats
+        # Disable quality for audio-only formats
         is_audio = index >= 2
         self.quality_combo.setEnabled(not is_audio)
-        if is_audio:
-            self.quality_combo.setCurrentIndex(0)  # Best
     
-    def _get_format_type(self) -> str:
-        """Get current format type string."""
-        format_map = {
-            0: "video_audio",
-            1: "video_only",
-            2: "audio_mp3",
-            3: "audio_m4a",
-            4: "audio_best"
-        }
-        return format_map.get(self.format_combo.currentIndex(), "video_audio")
-    
-    def _get_format_spec(self) -> str:
-        """Build format specification from selections."""
-        quality_map = {
-            0: "best",
-            1: "4k",
-            2: "1080",
-            3: "720",
-            4: "480",
-            5: "360",
-            6: "worst"
+    def _build_format_spec(self) -> str:
+        """Build yt-dlp format specification."""
+        format_idx = self.format_combo.currentIndex()
+        quality_idx = self.quality_combo.currentIndex()
+        
+        # Quality mapping
+        quality_heights = {
+            0: None,     # Best
+            1: 1080,
+            2: 720,
+            3: 480,
+            4: 360
         }
         
-        format_type = self._get_format_type()
-        quality = quality_map.get(self.quality_combo.currentIndex(), "best")
+        height = quality_heights.get(quality_idx)
         
-        return FormatExtractor.build_format_spec(format_type, quality)
+        if format_idx == 0:  # Video + Audio
+            if height:
+                return f"bestvideo[height<={height}]+bestaudio/best[height<={height}]"
+            return "bestvideo+bestaudio/best"
+        elif format_idx == 1:  # Video Only
+            if height:
+                return f"bestvideo[height<={height}]"
+            return "bestvideo"
+        elif format_idx == 2:  # Audio MP3
+            return "bestaudio"
+        elif format_idx == 3:  # Audio M4A
+            return "bestaudio[ext=m4a]/bestaudio"
+        
+        return "bestvideo+bestaudio/best"
+    
+    def _get_extra_args(self) -> list:
+        """Get extra yt-dlp arguments based on format."""
+        format_idx = self.format_combo.currentIndex()
+        
+        if format_idx == 2:  # Audio MP3
+            return ["--extract-audio", "--audio-format", "mp3"]
+        elif format_idx == 3:  # Audio M4A
+            return ["--extract-audio", "--audio-format", "m4a"]
+        
+        return []
     
     def _start_download(self):
         """Start immediate download."""
         if not self._current_info:
+            return
+        
+        if self._is_downloading:
+            QMessageBox.warning(self, "Download in Progress", "Please wait for the current download to finish.")
             return
         
         self._is_downloading = True
@@ -333,29 +313,31 @@ class NormalMode(QWidget):
         self.progress_group.setVisible(True)
         self.progress_bar.setValue(0)
         self.status_label.setText("Status: Starting...")
+        self.speed_label.setText("Speed: -")
+        self.eta_label.setText("ETA: -")
         self.download_btn.setEnabled(False)
         self.queue_btn.setEnabled(False)
         self.cancel_btn.setVisible(True)
         
-        format_type = self._get_format_type()
-        format_spec = self._get_format_spec()
-        extra_args = FormatExtractor.get_extra_args(format_type)
+        format_spec = self._build_format_spec()
+        extra_args = self._get_extra_args()
         output_path = self.output_input.text()
         
-        # Determine container format (audio formats don't need merge)
-        is_audio = format_type.startswith("audio_")
+        # Determine if video (needs merge format)
+        format_idx = self.format_combo.currentIndex()
+        is_video = format_idx <= 1
         
         options = {
-            'embed_thumbnail': self.config.settings.download.embed_thumbnail,
-            'embed_metadata': self.config.settings.download.embed_metadata,
             'extra_args': extra_args,
         }
         
-        # Force MP4 container for video downloads
-        if not is_audio:
+        # Force MP4 container for video
+        if is_video:
             options['merge_output_format'] = 'mp4'
         
         self.logger.info(f"Starting download: {self._current_info.title}")
+        self.logger.debug(f"Format spec: {format_spec}")
+        
         self.ytdlp.download(
             url=self._current_info.url,
             output_path=output_path,
@@ -395,28 +377,18 @@ class NormalMode(QWidget):
         """Handle download completion."""
         if not self._is_downloading:
             return
-            
+        
         self._reset_after_download()
         
         if success:
             self.status_label.setText("Status: Complete!")
             self.progress_bar.setValue(100)
             self.logger.info(f"Download completed: {message}")
-            
-            QMessageBox.information(
-                self,
-                "Success",
-                "Download completed successfully!"
-            )
+            QMessageBox.information(self, "Success", "Download completed successfully!")
         else:
             self.status_label.setText("Status: Failed")
             self.logger.error(f"Download failed: {message}")
-            
-            QMessageBox.warning(
-                self,
-                "Download Failed",
-                f"Download failed:\n{message}"
-            )
+            QMessageBox.warning(self, "Download Failed", f"Download failed:\n{message}")
     
     def _add_to_queue(self):
         """Add current video to download queue."""
@@ -424,7 +396,17 @@ class NormalMode(QWidget):
             return
         
         queue = get_queue_manager()
-        format_spec = self._get_format_spec()
+        format_spec = self._build_format_spec()
+        
+        format_idx = self.format_combo.currentIndex()
+        is_video = format_idx <= 1
+        
+        options = {
+            'extra_args': self._get_extra_args(),
+        }
+        
+        if is_video:
+            options['merge_output_format'] = 'mp4'
         
         queue.add_url(
             url=self._current_info.url,
@@ -432,36 +414,20 @@ class NormalMode(QWidget):
             thumbnail=self._current_info.thumbnail,
             duration=self._current_info.duration,
             format_spec=format_spec,
-            output_path=self.output_input.text()
+            output_path=self.output_input.text(),
+            options=options
         )
         
+        self.add_to_queue.emit({'title': self._current_info.title})
         self.logger.info(f"Added to queue: {self._current_info.title}")
         
-        self.add_to_queue.emit({
-            'title': self._current_info.title,
-            'url': self._current_info.url
-        })
-        
-        # Clear for next video
-        self.url_input.clear()
-        self.preview.clear()
-        self._current_info = None
-        self.download_btn.setEnabled(False)
-        self.queue_btn.setEnabled(False)
+        QMessageBox.information(self, "Added to Queue", f"'{self._current_info.title}' added to download queue.")
     
     def set_url(self, url: str):
         """Set URL externally (for sync from other modes)."""
-        if url != self.url_input.text():
-            self.url_input.blockSignals(True)
+        if url and url != self.url_input.text():
             self.url_input.setText(url)
-            self.url_input.blockSignals(False)
-            if url:
-                self._fetch_info()
     
     def get_url(self) -> str:
         """Get current URL."""
         return self.url_input.text().strip()
-    
-    def get_current_info(self) -> Optional[VideoInfo]:
-        """Get current video info."""
-        return self._current_info

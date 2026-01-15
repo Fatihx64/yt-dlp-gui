@@ -274,9 +274,11 @@ class NormalMode(QWidget):
         height = quality_heights.get(quality_idx)
         
         if format_idx == 0:  # Video + Audio
+            # Always download separate video+audio and merge
+            # Don't use /best fallback as it's often video-only
             if height:
-                return f"bestvideo[height<={height}]+bestaudio/best[height<={height}]"
-            return "bestvideo+bestaudio/best"
+                return f"bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={height}]+bestaudio"
+            return "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio"
         elif format_idx == 1:  # Video Only
             if height:
                 return f"bestvideo[height<={height}]"
@@ -286,7 +288,7 @@ class NormalMode(QWidget):
         elif format_idx == 3:  # Audio M4A
             return "bestaudio[ext=m4a]/bestaudio"
         
-        return "bestvideo+bestaudio/best"
+        return "bestvideo+bestaudio"
     
     def _get_extra_args(self) -> list:
         """Get extra yt-dlp arguments based on format."""

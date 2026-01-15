@@ -328,12 +328,13 @@ class AdvancedMode(QWidget):
         height = heights.get(quality_idx)
         
         if quality_idx == 6:  # Worst
-            return "worstvideo+worstaudio/worst"
+            return "worstvideo+worstaudio"
         
+        # Always use bestvideo+bestaudio, never fallback to /best (single stream)
         if height:
-            return f"bestvideo[height<={height}]+bestaudio/best[height<={height}]"
+            return f"bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={height}]+bestaudio"
         
-        return "bestvideo+bestaudio/best"
+        return "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio"
     
     def _build_options(self) -> dict:
         container = self.container_combo.currentText()

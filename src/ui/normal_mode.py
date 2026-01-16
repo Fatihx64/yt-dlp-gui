@@ -161,17 +161,21 @@ class NormalMode(QWidget):
         self.download_btn = QPushButton("▶ Download")
         self.download_btn.setObjectName("primaryButton")
         self.download_btn.setEnabled(False)
-        self.download_btn.setMinimumWidth(150)
+        self.download_btn.setMinimumWidth(130)
         action_layout.addWidget(self.download_btn)
         
         self.queue_btn = QPushButton("+ Add to Queue")
         self.queue_btn.setObjectName("secondaryButton")
         self.queue_btn.setEnabled(False)
-        self.queue_btn.setMinimumWidth(150)
+        self.queue_btn.setMinimumWidth(130)
         action_layout.addWidget(self.queue_btn)
         
-        self.advanced_btn = QPushButton("⚙ Advanced Mode")
-        self.advanced_btn.setMinimumWidth(150)
+        self.clear_btn = QPushButton("🗑 Clear")
+        self.clear_btn.setMinimumWidth(100)
+        action_layout.addWidget(self.clear_btn)
+        
+        self.advanced_btn = QPushButton("⚙ Advanced")
+        self.advanced_btn.setMinimumWidth(120)
         action_layout.addWidget(self.advanced_btn)
         
         layout.addLayout(action_layout)
@@ -184,6 +188,7 @@ class NormalMode(QWidget):
         self.browse_btn.clicked.connect(self._browse_folder)
         self.download_btn.clicked.connect(self._start_download)
         self.queue_btn.clicked.connect(self._add_to_queue)
+        self.clear_btn.clicked.connect(self._clear_all)
         self.advanced_btn.clicked.connect(lambda: self.switch_to_advanced.emit(self.url_input.text()))
         self.url_input.returnPressed.connect(self._fetch_info)
         self.format_combo.currentIndexChanged.connect(self._on_format_changed)
@@ -194,6 +199,23 @@ class NormalMode(QWidget):
         self.ytdlp.signals.error.connect(self._on_error)
         self.ytdlp.signals.progress.connect(self._on_progress)
         self.ytdlp.signals.finished.connect(self._on_finished)
+    
+    def _clear_all(self):
+        """Clear all fields and reset UI."""
+        self.url_input.clear()
+        self.preview.clear()
+        self._current_info = None
+        self.download_btn.setEnabled(False)
+        self.queue_btn.setEnabled(False)
+        self.progress_group.setVisible(False)
+        self.progress_bar.setValue(0)
+        self.speed_label.setText("Speed: -")
+        self.eta_label.setText("ETA: -")
+        self.status_label.setText("Status: Ready")
+        self.format_combo.setCurrentIndex(0)
+        self.quality_combo.setCurrentIndex(0)
+        self.quality_combo.setEnabled(True)
+        self.logger.info("UI cleared")
     
     def _paste_url(self):
         """Paste URL from clipboard."""

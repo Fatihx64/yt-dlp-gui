@@ -117,6 +117,10 @@ class AdvancedMode(QWidget):
         self.normal_btn.setFixedWidth(130)
         action_layout.addWidget(self.normal_btn)
         
+        self.clear_btn = QPushButton("🗑 Clear")
+        self.clear_btn.setFixedWidth(100)
+        action_layout.addWidget(self.clear_btn)
+        
         action_layout.addStretch()
         
         self.queue_btn = QPushButton("+ Add to Queue")
@@ -184,35 +188,91 @@ class AdvancedMode(QWidget):
         self.clip_enabled = QCheckBox("Enable Clip Extraction")
         layout.addWidget(self.clip_enabled)
         
-        # Time inputs
-        time_layout = QFormLayout()
+        # Time range group
+        time_group = QGroupBox("Time Range")
+        time_layout = QVBoxLayout(time_group)
         
+        # Start time row
+        start_row = QHBoxLayout()
+        start_row.addWidget(QLabel("Start:"))
         self.clip_start = QLineEdit()
         self.clip_start.setPlaceholderText("00:00:00")
         self.clip_start.setEnabled(False)
-        self.clip_start.setFixedWidth(100)
-        time_layout.addRow("Start Time:", self.clip_start)
+        self.clip_start.setFixedWidth(80)
+        start_row.addWidget(self.clip_start)
         
+        self.start_slider = QSlider(Qt.Horizontal)
+        self.start_slider.setMinimum(0)
+        self.start_slider.setMaximum(100)
+        self.start_slider.setValue(0)
+        self.start_slider.setEnabled(False)
+        start_row.addWidget(self.start_slider)
+        
+        self.start_label = QLabel("00:00")
+        self.start_label.setFixedWidth(50)
+        start_row.addWidget(self.start_label)
+        time_layout.addLayout(start_row)
+        
+        # End time row
+        end_row = QHBoxLayout()
+        end_row.addWidget(QLabel("End:  "))
         self.clip_end = QLineEdit()
         self.clip_end.setPlaceholderText("00:00:00")
         self.clip_end.setEnabled(False)
-        self.clip_end.setFixedWidth(100)
-        time_layout.addRow("End Time:", self.clip_end)
+        self.clip_end.setFixedWidth(80)
+        end_row.addWidget(self.clip_end)
         
-        layout.addLayout(time_layout)
+        self.end_slider = QSlider(Qt.Horizontal)
+        self.end_slider.setMinimum(0)
+        self.end_slider.setMaximum(100)
+        self.end_slider.setValue(100)
+        self.end_slider.setEnabled(False)
+        end_row.addWidget(self.end_slider)
         
-        info = QLabel("💡 FFmpeg required for clip extraction")
+        self.end_label = QLabel("00:00")
+        self.end_label.setFixedWidth(50)
+        end_row.addWidget(self.end_label)
+        time_layout.addLayout(end_row)
+        
+        layout.addWidget(time_group)
+        
+        info = QLabel("💡 Use sliders or enter times in HH:MM:SS format.\nFFmpeg required for clip extraction.")
         info.setStyleSheet("color: #888;")
         layout.addWidget(info)
         
         layout.addStretch()
         
-        self.clip_enabled.toggled.connect(lambda x: (
-            self.clip_start.setEnabled(x),
-            self.clip_end.setEnabled(x)
-        ))
+        # Connect signals
+        self.clip_enabled.toggled.connect(self._on_clip_toggled)
+        self.start_slider.valueChanged.connect(self._on_start_slider)
+        self.end_slider.valueChanged.connect(self._on_end_slider)
         
         return widget
+    
+    def _on_clip_toggled(self, enabled):
+        self.clip_start.setEnabled(enabled)
+        self.clip_end.setEnabled(enabled)
+        self.start_slider.setEnabled(enabled)
+        self.end_slider.setEnabled(enabled)
+    
+    def _on_start_slider(self, value):
+        if self._current_info and self._current_info.duration > 0:
+            seconds = int(value * self._current_info.duration / 100)
+            self.clip_start.setText(self._format_time(seconds))
+            self.start_label.setText(self._format_time(seconds))
+    
+    def _on_end_slider(self, value):
+        if self._current_info and self._current_info.duration > 0:
+            seconds = int(value * self._current_info.duration / 100)
+            self.clip_end.setText(self._format_time(seconds))
+            self.end_label.setText(self._format_time(seconds))
+    
+    def _format_time(self, seconds):
+        m, s = divmod(seconds, 60)
+        h, m = divmod(m, 60)
+        if h > 0:
+            return f"{h:02d}:{m:02d}:{s:02d}"
+        return f"{m:02d}:{s:02d}"
     
     def _create_output_tab(self) -> QWidget:
         widget = QWidget()
@@ -271,11 +331,62 @@ class AdvancedMode(QWidget):
         self.normal_btn.clicked.connect(self.switch_to_normal.emit)
         self.url_input.returnPressed.connect(self._fetch_info)
         self.cancel_btn.clicked.connect(self._cancel_download)
+        self.clear_btn.clicked.connect(self._clear_all)
         
         self.ytdlp.signals.info_ready.connect(self._on_info_ready)
         self.ytdlp.signals.error.connect(self._on_error)
         self.ytdlp.signals.progress.connect(self._on_progress)
         self.ytdlp.signals.finished.connect(self._on_finished)
+    
+    def _clear_all(self):
+        """Clear all fields and reset UI to default state."""
+        # Reset URL and preview
+        self.url_input.clear()
+        self.preview.clear()
+        self._current_info = None
+        
+        # Reset Format tab
+        self.quality_combo.setCurrentIndex(2)  # 1080p default
+        self.container_combo.setCurrentIndex(0)  # mp4
+        self.audio_only.setChecked(False)
+        self.audio_format.setCurrentIndex(0)
+        self.audio_format.setEnabled(False)
+        self.quality_combo.setEnabled(True)
+        self.container_combo.setEnabled(True)
+        
+        # Reset Clip tab
+        self.clip_enabled.setChecked(False)
+        self.clip_start.clear()
+        self.clip_start.setEnabled(False)
+        self.clip_end.clear()
+        self.clip_end.setEnabled(False)
+        self.start_slider.setValue(0)
+        self.start_slider.setEnabled(False)
+        self.end_slider.setValue(100)
+        self.end_slider.setEnabled(False)
+        self.start_label.setText("00:00")
+        self.end_label.setText("00:00")
+        
+        # Reset Output tab
+        self.embed_thumb.setChecked(False)
+        self.embed_meta.setChecked(False)
+        
+        # Reset Network tab
+        self.proxy_input.clear()
+        self.rate_limit.clear()
+        self.retries.setValue(10)
+        
+        # Reset progress and buttons
+        self.progress_group.setVisible(False)
+        self.progress_bar.setValue(0)
+        self.speed_label.setText("Speed: -")
+        self.eta_label.setText("ETA: -")
+        self.status_label.setText("Status: Ready")
+        self.download_btn.setEnabled(False)
+        self.queue_btn.setEnabled(False)
+        self.cancel_btn.setVisible(False)
+        
+        self.logger.info("UI cleared")
     
     def _paste_url(self):
         clipboard = QApplication.clipboard()

@@ -18,6 +18,7 @@ a = Analysis(
     binaries=[],
     datas=[
         ('yt-dlp.exe', '.'),  # Include yt-dlp executable
+        ('assets/icon.ico', 'assets'),  # Include app icon
     ],
     hiddenimports=[
         'PySide6.QtCore',
@@ -59,5 +60,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,  # Add icon path here if you have one
+    icon='assets/icon.ico',  # Application icon
 )

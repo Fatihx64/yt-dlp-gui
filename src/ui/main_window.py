@@ -47,6 +47,9 @@ class MainWindow(QMainWindow):
         """Configure main window properties."""
         self.setWindowTitle("YT-DLP GUI - YouTube Video Downloader")
         
+        # Set window icon
+        self._set_window_icon()
+        
         # Apply theme
         theme = get_theme(self.config.settings.ui.theme)
         self.setStyleSheet(theme)
@@ -58,6 +61,26 @@ class MainWindow(QMainWindow):
         else:
             self.resize(ui.window_width, ui.window_height)
             self._center_window()
+    
+    def _set_window_icon(self):
+        """Set the application window icon."""
+        import sys
+        
+        # Determine icon path based on whether we're running as EXE or from source
+        if getattr(sys, 'frozen', False):
+            # Running as compiled EXE
+            base_path = Path(sys.executable).parent
+        else:
+            # Running from source
+            base_path = Path(__file__).parent.parent.parent
+        
+        icon_path = base_path / 'assets' / 'icon.ico'
+        
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
+            self.logger.debug(f"Window icon set from: {icon_path}")
+        else:
+            self.logger.warning(f"Icon not found at: {icon_path}")
     
     def _center_window(self):
         """Center window on screen."""

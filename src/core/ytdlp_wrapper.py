@@ -155,6 +155,7 @@ class YTDLPWrapper:
         args.extend([
             '--no-playlist',
             '--encoding', 'utf-8',
+            '--windows-filenames',  # Sanitize filenames for Windows compatibility
         ])
         
         return args
@@ -304,13 +305,22 @@ class YTDLPWrapper:
                 self.logger.info(f"Starting download: {url}")
                 self.logger.debug(f"Command: {' '.join(args)}")
                 
+                # Set up environment for proper encoding handling
+                import os
+                env = os.environ.copy()
+                env['PYTHONIOENCODING'] = 'utf-8'
+                # Force UTF-8 for Windows console
+                env['PYTHONUTF8'] = '1'
+                
                 process = subprocess.Popen(
                     args,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
                     encoding='utf-8',
-                    creationflags=subprocess.CREATE_NO_WINDOW
+                    errors='replace',  # Replace problematic characters instead of crashing
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    env=env
                 )
                 
                 self._active_processes[task_id] = process

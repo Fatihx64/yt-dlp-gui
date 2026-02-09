@@ -134,7 +134,23 @@ class YTDLPWrapper:
         # Check FFmpeg path dynamically (might be installed after app start)
         ffmpeg_path = get_ffmpeg_path()
         if ffmpeg_path:
-            args.extend(['--ffmpeg-location', str(ffmpeg_path.parent)])
+            # Convert to short path name on Windows to avoid issues with
+            # Unicode characters and spaces in the path
+            ffmpeg_dir = str(ffmpeg_path.parent)
+            try:
+                import ctypes
+                GetShortPathNameW = ctypes.windll.kernel32.GetShortPathNameW
+                buffer_size = GetShortPathNameW(ffmpeg_dir, None, 0)
+                if buffer_size > 0:
+                    buffer = ctypes.create_unicode_buffer(buffer_size)
+                    GetShortPathNameW(ffmpeg_dir, buffer, buffer_size)
+                    short_path = buffer.value
+                    if short_path:
+                        ffmpeg_dir = short_path
+            except Exception:
+                pass  # Fall back to original path if conversion fails
+            
+            args.extend(['--ffmpeg-location', ffmpeg_dir])
         
         args.extend([
             '--no-playlist',

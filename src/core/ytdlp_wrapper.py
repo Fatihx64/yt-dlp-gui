@@ -155,7 +155,8 @@ class YTDLPWrapper:
         args.extend([
             '--no-playlist',
             '--encoding', 'utf-8',
-            '--windows-filenames',  # Sanitize filenames for Windows compatibility
+            '--windows-filenames',
+            '--newline',  # Force per-line progress output
         ])
         
         return args
@@ -202,6 +203,7 @@ class YTDLPWrapper:
                     capture_output=True,
                     text=True,
                     encoding='utf-8',
+                    errors='replace',
                     creationflags=subprocess.CREATE_NO_WINDOW
                 )
                 
@@ -254,8 +256,6 @@ class YTDLPWrapper:
                 args = self._get_base_args() + [
                     '-f', format_spec,
                     '-o', output_template,
-                    '--newline',
-                    '--progress',
                 ]
                 
                 # Add optional arguments
@@ -269,18 +269,15 @@ class YTDLPWrapper:
                     args.extend(['--embed-subs', '--sub-langs', ','.join(options.get('subtitle_langs', ['en']))])
                 
                 if options.get('clip_start') or options.get('clip_end'):
-                    # Build download section string: *start-end
                     start = options.get('clip_start', '0:00')
                     end = options.get('clip_end', '')
                     
-                    # Format: "*start-end" or "*start-" if no end
                     if end:
                         section = f"*{start}-{end}"
                     else:
                         section = f"*{start}-"
                     
                     args.extend(['--download-sections', section])
-                    # Force keyframes for accurate cuts
                     args.append('--force-keyframes-at-cuts')
                 
                 if options.get('rate_limit'):
@@ -309,7 +306,6 @@ class YTDLPWrapper:
                 import os
                 env = os.environ.copy()
                 env['PYTHONIOENCODING'] = 'utf-8'
-                # Force UTF-8 for Windows console
                 env['PYTHONUTF8'] = '1'
                 
                 process = subprocess.Popen(
@@ -318,14 +314,14 @@ class YTDLPWrapper:
                     stderr=subprocess.STDOUT,
                     text=True,
                     encoding='utf-8',
-                    errors='replace',  # Replace problematic characters instead of crashing
+                    errors='replace',
                     creationflags=subprocess.CREATE_NO_WINDOW,
                     env=env
                 )
                 
                 self._active_processes[task_id] = process
                 progress = DownloadProgress(status="downloading")
-                error_lines = []  # Collect error messages
+                error_lines = []
                 
                 for line in process.stdout:
                     if self._cancelled.get(task_id):
@@ -337,8 +333,11 @@ class YTDLPWrapper:
                     if not line:
                         continue
                     
+                    # Log all output for debugging
+                    self.logger.debug(f"yt-dlp: {line}")
+                    
                     # Capture error lines
-                    if 'ERROR:' in line or 'error:' in line.lower():
+                    if 'ERROR:' in line:
                         error_lines.append(line)
                         self.logger.error(line)
                     
@@ -355,9 +354,8 @@ class YTDLPWrapper:
                     self.signals.progress.emit(progress)
                     self.signals.finished.emit(True, output_path)
                 else:
-                    # Include actual error messages if captured
                     if error_lines:
-                        error_msg = "\n".join(error_lines[-3:])  # Last 3 errors
+                        error_msg = error_lines[-1]  # Last error is most relevant
                     else:
                         error_msg = f"Download failed with exit code {process.returncode}"
                     self.logger.error(f"Download failed: {error_msg}")
@@ -376,35 +374,61 @@ class YTDLPWrapper:
     
     def _parse_progress_line(self, line: str, progress: DownloadProgress) -> DownloadProgress:
         """Parse a progress line from yt-dlp output."""
-        # [download] 45.5% of 125.32MiB at 2.35MiB/s ETA 00:25
+        
+        # Match: [download]  45.5% of  ~125.32MiB at  2.35MiB/s ETA 00:25
+        # Also:  [download]  45.5% of 125.32MiB at 2.35MiB/s ETA 00:25
+        # Also:  [download]   0.0% of ~  1.20GiB at Unknown speed ETA Unknown
         download_match = re.search(
-            r'\[download\]\s+(\d+\.?\d*)%\s+of\s+~?(\S+)\s+at\s+(\S+)\s+ETA\s+(\S+)',
+            r'\[download\]\s+(\d+\.?\d*)%\s+of\s+~?\s*(\S+)\s+at\s+(.+?)\s+ETA\s+(\S+)',
             line
         )
         if download_match:
             progress.percent = float(download_match.group(1))
             progress.total = download_match.group(2)
-            progress.speed = download_match.group(3)
-            progress.eta = download_match.group(4)
+            speed = download_match.group(3).strip()
+            eta = download_match.group(4).strip()
+            progress.speed = speed if speed != "Unknown" else "-"
+            progress.eta = eta if eta != "Unknown" else "-"
             progress.status = "downloading"
             return progress
         
-        # [download] Destination: filename.mp4
-        dest_match = re.search(r'\[download\]\s+Destination:\s+(.+)', line)
-        if dest_match:
-            progress.filename = dest_match.group(1)
-            return progress
-        
-        # [download] 100% of 125.32MiB in 00:53
-        complete_match = re.search(r'\[download\]\s+100%\s+of\s+(\S+)', line)
+        # Match: [download] 100% of 125.32MiB in 00:53 at 2.35MiB/s
+        # Also:  [download] 100% of  125.32MiB in 00:53
+        complete_match = re.search(
+            r'\[download\]\s+100%\s+of\s+~?\s*(\S+)\s+in\s+(\S+)',
+            line
+        )
         if complete_match:
             progress.percent = 100.0
             progress.total = complete_match.group(1)
+            progress.speed = ""
+            progress.eta = ""
             progress.status = "processing"
             return progress
         
-        # [Merger] Merging formats...
-        if '[Merger]' in line or '[ExtractAudio]' in line:
+        # Match: [download] Destination: filename.mp4
+        dest_match = re.search(r'\[download\]\s+Destination:\s+(.+)', line)
+        if dest_match:
+            progress.filename = dest_match.group(1)
+            progress.status = "downloading"
+            return progress
+        
+        # Match: [download] filename has already been downloaded
+        if '[download]' in line and 'already been downloaded' in line:
+            progress.percent = 100.0
+            progress.status = "processing"
+            return progress
+        
+        # Match: [Merger] Merging formats...
+        if '[Merger]' in line:
+            progress.status = "merging"
+            progress.percent = 99.0
+            progress.speed = ""
+            progress.eta = ""
+            return progress
+        
+        # Match: [ExtractAudio] or [ffmpeg] processing
+        if '[ExtractAudio]' in line or '[ffmpeg]' in line:
             progress.status = "processing"
             return progress
         

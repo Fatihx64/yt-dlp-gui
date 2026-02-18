@@ -26,11 +26,11 @@ class NormalMode(QWidget):
     add_to_queue = Signal(dict)
     switch_to_advanced = Signal(str)  # Emit URL when switching
     
-    def __init__(self, parent=None):
+    def __init__(self, ytdlp: YTDLPWrapper = None, parent=None):
         super().__init__(parent)
         self.logger = get_logger()
         self.config = get_config()
-        self.ytdlp = YTDLPWrapper()
+        self.ytdlp = ytdlp or YTDLPWrapper()
         self._current_info: Optional[VideoInfo] = None
         self._is_downloading = False
         self._current_task_id: Optional[str] = None
@@ -295,22 +295,20 @@ class NormalMode(QWidget):
         
         height = quality_heights.get(quality_idx)
         
-        if format_idx == 0:  # Video + Audio
-            # Always download separate video+audio and merge
-            # Don't use /best fallback as it's often video-only
+        if format_idx == 0:  # Video + Audio (MP4)
             if height:
-                return f"bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={height}]+bestaudio"
-            return "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio"
+                return f"bestvideo[height<={height}]+bestaudio/best"
+            return "bestvideo+bestaudio/best"
         elif format_idx == 1:  # Video Only
             if height:
-                return f"bestvideo[height<={height}]"
-            return "bestvideo"
+                return f"bestvideo[height<={height}]/best"
+            return "bestvideo/best"
         elif format_idx == 2:  # Audio MP3
-            return "bestaudio"
+            return "bestaudio/best"
         elif format_idx == 3:  # Audio M4A
-            return "bestaudio[ext=m4a]/bestaudio"
+            return "bestaudio[ext=m4a]/bestaudio/best"
         
-        return "bestvideo+bestaudio"
+        return "bestvideo+bestaudio/best"
     
     def _get_extra_args(self) -> list:
         """Get extra yt-dlp arguments based on format."""
@@ -393,8 +391,10 @@ class NormalMode(QWidget):
         if not self._is_downloading:
             return
         self.progress_bar.setValue(int(progress.percent))
-        self.speed_label.setText(f"Speed: {progress.speed}")
-        self.eta_label.setText(f"ETA: {progress.eta}")
+        if progress.speed:
+            self.speed_label.setText(f"Speed: {progress.speed}")
+        if progress.eta:
+            self.eta_label.setText(f"ETA: {progress.eta}")
         self.status_label.setText(f"Status: {progress.status.title()}")
     
     def _on_finished(self, success: bool, message: str):
@@ -455,3 +455,17 @@ class NormalMode(QWidget):
     def get_url(self) -> str:
         """Get current URL."""
         return self.url_input.text().strip()
+    
+    def set_video_info(self, info: VideoInfo):
+        """Set video info externally (for state transfer from other modes)."""
+        if info:
+            self._current_info = info
+            self.preview.set_video_info(info)
+            self.download_btn.setEnabled(True)
+            self.queue_btn.setEnabled(True)
+            self.fetch_btn.setEnabled(True)
+            self.fetch_btn.setText("🔍 Fetch")
+    
+    def get_current_info(self) -> Optional[VideoInfo]:
+        """Get currently loaded video info."""
+        return self._current_info

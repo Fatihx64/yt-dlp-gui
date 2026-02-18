@@ -29,14 +29,16 @@ class AdvancedMode(QWidget):
     add_to_queue = Signal(dict)
     switch_to_normal = Signal()
     
-    def __init__(self, parent=None):
+    def __init__(self, ytdlp: YTDLPWrapper = None, parent=None):
         super().__init__(parent)
         self.logger = get_logger()
         self.config = get_config()
-        self.ytdlp = YTDLPWrapper()
+        self.ytdlp = ytdlp or YTDLPWrapper()
         self._current_info: Optional[VideoInfo] = None
         self._is_downloading = False
         self._current_task_id: Optional[str] = None
+        self._updating_slider = False  # Flag to prevent slider↔text loop
+        self._updating_text = False    # Flag to prevent text↔slider loop
         
         self._setup_ui()
         self._connect_signals()
@@ -246,6 +248,9 @@ class AdvancedMode(QWidget):
         self.clip_enabled.toggled.connect(self._on_clip_toggled)
         self.start_slider.valueChanged.connect(self._on_start_slider)
         self.end_slider.valueChanged.connect(self._on_end_slider)
+        # Connect text editing to update sliders
+        self.clip_start.editingFinished.connect(self._on_start_text_changed)
+        self.clip_end.editingFinished.connect(self._on_end_text_changed)
         
         return widget
     
@@ -256,16 +261,71 @@ class AdvancedMode(QWidget):
         self.end_slider.setEnabled(enabled)
     
     def _on_start_slider(self, value):
+        """Slider moved → update text field."""
+        if self._updating_slider:
+            return  # Prevent loop
         if self._current_info and self._current_info.duration > 0:
+            self._updating_text = True
             seconds = int(value * self._current_info.duration / 100)
             self.clip_start.setText(self._format_time(seconds))
             self.start_label.setText(self._format_time(seconds))
+            self._updating_text = False
     
     def _on_end_slider(self, value):
+        """Slider moved → update text field."""
+        if self._updating_slider:
+            return  # Prevent loop
         if self._current_info and self._current_info.duration > 0:
+            self._updating_text = True
             seconds = int(value * self._current_info.duration / 100)
             self.clip_end.setText(self._format_time(seconds))
             self.end_label.setText(self._format_time(seconds))
+            self._updating_text = False
+    
+    def _on_start_text_changed(self):
+        """Text field edited → update slider position."""
+        if self._updating_text:
+            return  # Prevent loop
+        if self._current_info and self._current_info.duration > 0:
+            seconds = self._parse_time(self.clip_start.text())
+            if seconds >= 0:
+                self._updating_slider = True
+                slider_val = int(seconds * 100 / self._current_info.duration)
+                slider_val = max(0, min(100, slider_val))
+                self.start_slider.setValue(slider_val)
+                self.start_label.setText(self._format_time(seconds))
+                self._updating_slider = False
+    
+    def _on_end_text_changed(self):
+        """Text field edited → update slider position."""
+        if self._updating_text:
+            return  # Prevent loop
+        if self._current_info and self._current_info.duration > 0:
+            seconds = self._parse_time(self.clip_end.text())
+            if seconds >= 0:
+                self._updating_slider = True
+                slider_val = int(seconds * 100 / self._current_info.duration)
+                slider_val = max(0, min(100, slider_val))
+                self.end_slider.setValue(slider_val)
+                self.end_label.setText(self._format_time(seconds))
+                self._updating_slider = False
+    
+    def _parse_time(self, time_str: str) -> int:
+        """Parse HH:MM:SS or MM:SS format to seconds. Returns -1 on failure."""
+        time_str = time_str.strip()
+        if not time_str:
+            return -1
+        try:
+            parts = time_str.split(':')
+            if len(parts) == 3:
+                return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+            elif len(parts) == 2:
+                return int(parts[0]) * 60 + int(parts[1])
+            elif len(parts) == 1:
+                return int(parts[0])
+        except (ValueError, IndexError):
+            pass
+        return -1
     
     def _format_time(self, seconds):
         m, s = divmod(seconds, 60)
@@ -417,6 +477,10 @@ class AdvancedMode(QWidget):
         self.fetch_btn.setText("Fetch Info")
         self.download_btn.setEnabled(True)
         self.queue_btn.setEnabled(True)
+        
+        # Update clip slider max based on duration
+        if info.duration > 0:
+            self.end_label.setText(self._format_time(info.duration))
     
     def _on_error(self, error: str):
         self.fetch_btn.setEnabled(True)
@@ -432,20 +496,20 @@ class AdvancedMode(QWidget):
     
     def _build_format_spec(self) -> str:
         if self.audio_only.isChecked():
-            return "bestaudio"
+            return "bestaudio/best"
         
         quality_idx = self.quality_combo.currentIndex()
         heights = {0: None, 1: 2160, 2: 1080, 3: 720, 4: 480, 5: 360, 6: None}
         height = heights.get(quality_idx)
         
         if quality_idx == 6:  # Worst
-            return "worstvideo+worstaudio"
+            return "worstvideo+worstaudio/worst"
         
-        # Always use bestvideo+bestaudio, never fallback to /best (single stream)
+        # Simple format with /best fallback to ensure something always downloads
         if height:
-            return f"bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={height}]+bestaudio"
+            return f"bestvideo[height<={height}]+bestaudio/best"
         
-        return "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio"
+        return "bestvideo+bestaudio/best"
     
     def _build_options(self) -> dict:
         container = self.container_combo.currentText()
@@ -504,7 +568,7 @@ class AdvancedMode(QWidget):
         options = self._build_options()
         
         self.logger.info(f"Starting download: {self._current_info.title}")
-        self.logger.debug(f"Format: {format_spec}, Options: {options}")
+        self.logger.debug(f"Format: {format_spec}")
         
         self.ytdlp.download(
             url=self._current_info.url,
@@ -533,8 +597,10 @@ class AdvancedMode(QWidget):
         if not self._is_downloading:
             return
         self.progress_bar.setValue(int(progress.percent))
-        self.speed_label.setText(f"Speed: {progress.speed}")
-        self.eta_label.setText(f"ETA: {progress.eta}")
+        if progress.speed:
+            self.speed_label.setText(f"Speed: {progress.speed}")
+        if progress.eta:
+            self.eta_label.setText(f"ETA: {progress.eta}")
         self.status_label.setText(f"Status: {progress.status.title()}")
     
     def _on_finished(self, success: bool, message: str):
@@ -576,6 +642,19 @@ class AdvancedMode(QWidget):
     
     def get_url(self) -> str:
         return self.url_input.text().strip()
+    
+    def set_video_info(self, info: VideoInfo):
+        """Set video info externally (for state transfer from other modes)."""
+        if info:
+            self._current_info = info
+            self.preview.set_video_info(info)
+            self.download_btn.setEnabled(True)
+            self.queue_btn.setEnabled(True)
+            self.fetch_btn.setEnabled(True)
+            self.fetch_btn.setText("Fetch Info")
+            # Update clip end label with duration
+            if info.duration > 0:
+                self.end_label.setText(self._format_time(info.duration))
     
     def get_current_info(self) -> Optional[VideoInfo]:
         return self._current_info

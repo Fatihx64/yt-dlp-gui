@@ -31,6 +31,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.logger = get_logger()
         self.config = get_config()
+        # Create a single shared YTDLPWrapper for all modes
         self.ytdlp = YTDLPWrapper()
         self.download_manager = get_download_manager()
         
@@ -116,14 +117,14 @@ class MainWindow(QMainWindow):
         self.content_splitter = QSplitter(Qt.Vertical)
         self.content_splitter.setChildrenCollapsible(False)  # Prevent collapsing
         
-        # Mode stack (Normal/Advanced)
+        # Mode stack (Normal/Advanced) — share a single YTDLPWrapper
         self.mode_stack = QStackedWidget()
         self.mode_stack.setMinimumHeight(400)  # Minimum height for mode
         
-        self.normal_mode = NormalMode()
+        self.normal_mode = NormalMode(ytdlp=self.ytdlp)
         self.mode_stack.addWidget(self.normal_mode)
         
-        self.advanced_mode = AdvancedMode()
+        self.advanced_mode = AdvancedMode(ytdlp=self.ytdlp)
         self.mode_stack.addWidget(self.advanced_mode)
         
         # Set initial mode
@@ -351,20 +352,28 @@ class MainWindow(QMainWindow):
             self._switch_to_normal_with_url()
     
     def _switch_to_advanced_with_url(self, url: str):
-        """Switch to Advanced mode and sync URL."""
+        """Switch to Advanced mode, sync URL and video info."""
         self.mode_stack.setCurrentIndex(1)
         if url:
             self.advanced_mode.set_url(url)
+        # Transfer video info state
+        info = self.normal_mode.get_current_info()
+        if info:
+            self.advanced_mode.set_video_info(info)
         self.config.settings.ui.advanced_mode = True
         self.config.save()
         self.logger.info("Switched to Advanced mode")
     
     def _switch_to_normal_with_url(self):
-        """Switch to Normal mode and sync URL."""
+        """Switch to Normal mode, sync URL and video info."""
         url = self.advanced_mode.get_url()
         self.mode_stack.setCurrentIndex(0)
         if url:
             self.normal_mode.set_url(url)
+        # Transfer video info state
+        info = self.advanced_mode.get_current_info()
+        if info:
+            self.normal_mode.set_video_info(info)
         self.config.settings.ui.advanced_mode = False
         self.config.save()
         self.logger.info("Switched to Normal mode")
